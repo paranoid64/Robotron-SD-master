@@ -237,14 +237,14 @@ void leaveDir(){
         --dir_depth;
         fetchEntry(entry_index);
 
-        Serial.print("LeaveDir:");
-        Serial.println(dir_index[dir_depth]);
+        //Serial.print("LeaveDir:");
+        //Serial.println(dir_index[dir_depth]);
         sd.chdir( dir_index[dir_depth] );
         sd.vwd()->rewind();
         
     } else {    
-      Serial.print("Leave Root:");
-      Serial.println( "/");
+      //Serial.print("Leave Root:");
+      //Serial.println( "/");
       sd.chdir( &sd );
       sd.vwd()->rewind();
     }
@@ -268,7 +268,8 @@ void downPressed(){
 void playWAV(){
   if(tmrpcm.isPlaying()){
     displayStop();
-    tmrpcm.stopPlayback();          
+    tmrpcm.stopPlayback();   
+    delay(800);       
   }else {
     displayPlay();
     tmrpcm.play(lfn);
@@ -280,8 +281,8 @@ void playWAV(){
 void selectPressed(){
     switch (entry_type){
       case 0:
-          Serial.print("Dir:");
-          Serial.println(lfn);
+          //Serial.print("Dir:");
+          //Serial.println(lfn);
           
           sd.chdir( lfn );
           sd.vwd()->rewind();
@@ -298,7 +299,7 @@ void selectPressed(){
 }
 
 void setup(){
-    Serial.begin(9600);
+    //Serial.begin(9600);
   
     setupDisplay();
     delay(500);
@@ -333,36 +334,42 @@ void setup(){
 bool loading = false;
 
 void loop(){
-    //enterDir();
-
     while (!Serial.available()){
 
-    if(tmrpcm.isPlaying()) {      
-        //LED loading
-        digitalWrite(3, HIGH);
-        loading=true;  
-    }else{
-        if(loading){   
-          lcd.setCursor(0,1);
-          lcd.print(F(""));
-          digitalWrite(3, LOW);
-          loading=false;
+      if(tmrpcm.isPlaying()) {      
+          //LED loading
+          digitalWrite(3, HIGH);
+          loading=true;  
+      }else{
+          if(loading){   
+            lcd.setCursor(0,1);
+            lcd.print(F("               "));
+            digitalWrite(3, LOW);
+            loading=false;
+          }
         }
-      }
-      
-      if(readButton(0)) {
-          fetchEntry(entry_index + 1);                      
-      }
-  
-      if(readButton(1)) {                          
-          fetchEntry(entry_index - 1);                         
-      }
-      if(readButton(2)) {  
-          selectPressed();    
-       }
-      if(readButton(3)) {  
-          leaveDir();     
-       }
+        
+        if(readButton(0)) {
+          if(!tmrpcm.isPlaying()) {  
+            fetchEntry(entry_index - 1);
+          }                      
+        }
+    
+        if(readButton(1)) {  
+          if(!tmrpcm.isPlaying()) {                         
+            fetchEntry(entry_index + 1);
+          }                         
+        }
+        
+        if(readButton(2)) {  
+            selectPressed();    
+        }
+         
+        if(readButton(3)) {
+          if(!tmrpcm.isPlaying()) {   
+            leaveDir();
+          }
+        }
      
         displayScrollingMessage();
     }
