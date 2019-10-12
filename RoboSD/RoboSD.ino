@@ -8,7 +8,7 @@
 #define SD0_CK          52     // SD SCK
 #define SD0_SS          53     // SS SS
 
-#define DIR_DEPTH       3
+#define DIR_DEPTH       8
 #define SFN_DEPTH       13
 #define LFN_DEPTH       100
 
@@ -37,24 +37,24 @@ byte          scroll_pos = 0;
 unsigned long scroll_time = millis() + SCROLL_WAIT;
 
 byte ifolder[8] = {
-  B00000,
-  B11000,
-  B11111,
-  B11111,
-  B11111,
-  B11111,
-  B00000,
-  B00000
+  0b00000,
+  0b11000,
+  0b11111,
+  0b11111,
+  0b11111,
+  0b11111,
+  0b00000,
+  0b00000
 };
 byte ifile[8] = {
-  B00111,
-  B01011,
-  B10011,
-  B11111,
-  B11111,
-  B11111,
-  B11111,
-  B11111
+  0b11111,
+  0b11101,
+  0b11001,
+  0b10001,
+  0b10001,
+  0b10001,
+  0b10001,
+  0b11111
 };
 
 /// This function displays a text on the first line with a horizontal scrolling if necessary.
@@ -62,7 +62,7 @@ void scrollText(char* text){
     if (scroll_pos < 0){ scroll_pos = 0; }
     char outtext[17];
 
-    outtext[0] = entry_type ? (entry_type + 1) : lcd.write(byte(0));
+    outtext[0] = entry_type ? (entry_type + 1) : lcd.write(0);
 
     for (int i = 1; i < 16; ++i){
         int p = i + scroll_pos - 1;
@@ -98,6 +98,12 @@ bool checkForWAV(char *filename){
     !!strstr(ext, ".wav");
 }
 
+bool checkForTAP(char *filename){
+    auto ext = strlwr(filename + (strlen(filename) - 4));
+    return
+        !!strstr(ext, ".tap");
+}
+
 void setupDisplay(){ 
     lcd.init();
     lcd.backlight();
@@ -107,7 +113,7 @@ void setupDisplay(){
   
     lcd.clear();
     lcd.print(F("ROBOTON SD"));
-    delay(100);
+    delay(600);
 }
 
 inline void displayEntryNameMessage(bool exists){ 
@@ -192,6 +198,8 @@ void fetchEntry(int16_t new_index){
         }
         else if(checkForWAV(lfn)){
           entry_type = 1;
+        } else if(checkForTAP(lfn)){
+          entry_type = 2;
         }
         displayEntryNameMessage(true);
         entry_index = new_index;
@@ -237,14 +245,14 @@ void leaveDir(){
         --dir_depth;
         fetchEntry(entry_index);
 
-        //Serial.print("LeaveDir:");
-        //Serial.println(dir_index[dir_depth]);
+        Serial.print("LeaveDir:");
+        Serial.println(dir_index[dir_depth]);
         sd.chdir( dir_index[dir_depth] );
         sd.vwd()->rewind();
         
     } else {    
-      //Serial.print("Leave Root:");
-      //Serial.println( "/");
+      Serial.print("Leave Root:");
+      Serial.println( "/");
       sd.chdir( &sd );
       sd.vwd()->rewind();
     }
@@ -277,21 +285,30 @@ void playWAV(){
   }
 }
 
+void playTAP(){
+  digitalWrite(3, HIGH);
+
+  digitalWrite(3, LOW);
+}
+
 /// This function handles the case where SELECT button is pressed.
 void selectPressed(){
     switch (entry_type){
       case 0:
-          //Serial.print("Dir:");
-          //Serial.println(lfn);
+          Serial.print("Dir:");
+          Serial.println(lfn);
           
           sd.chdir( lfn );
-          sd.vwd()->rewind();
+          //sd.vwd()->rewind();
           enterDir();
           
           break;
       case 1:
-        
-        if(entry_type==1){playWAV();}
+        //if(entry_type==1){playWAV();}
+        playWAV();
+        break;
+      case 2:
+        playTAP();
         break;
       default:
         break;
@@ -299,7 +316,7 @@ void selectPressed(){
 }
 
 void setup(){
-    //Serial.begin(9600);
+    Serial.begin(9600);
   
     setupDisplay();
     delay(500);
