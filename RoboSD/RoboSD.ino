@@ -1,12 +1,12 @@
 #include <Arduino.h>
 #include <SdFat.h>      // Sketch > Include library > Manage libraries > search: SdFat, by Bill Greiman
 #include <LiquidCrystal_I2C.h>
-#include <TMRpcm.h>
+#include "pcmConfig.h"
+#include "TMRpcm.h"
 
 #define SD0_MO          50     // SD MOSI
 #define SD0_MI          51     // SD MISO
 #define SD0_CK          52     // SD SCK
-#define SD0_SS          53     // SS SS
 
 #define DIR_DEPTH       8
 #define SFN_DEPTH       13
@@ -18,7 +18,7 @@
 TMRpcm tmrpcm;   // create an object for use in this sketch
 LiquidCrystal_I2C lcd(0x27, 16, 2);
 
-char        entry_type = 0;
+char        entry_type;
 SdFat       sd;
 SdFile      entry;
 SdFile      dir[DIR_DEPTH];
@@ -30,6 +30,8 @@ int8_t      dir_depth = -1;
 int16_t     dir_index[DIR_DEPTH] = {};
 bool        canceled = false;
 bool        level = LOW;
+bool        loading = false;
+bool        record = false;
 char        cdir[13];
 char        ldir[13];
 
@@ -47,25 +49,33 @@ byte ifolder[8] = {
   0b00000
 };
 byte ifile[8] = {
-  0b11111,
+  0b00000,
+  0b00111,
+  0b01101,
   0b11101,
-  0b11001,
   0b10001,
   0b10001,
-  0b10001,
-  0b10001,
-  0b11111
+  0b11111,
+  0b00000
 };
 
 /// This function displays a text on the first line with a horizontal scrolling if necessary.
 void scrollText(char* text){
+
     if (scroll_pos < 0){ scroll_pos = 0; }
     char outtext[17];
+    
+    if (entry.isDir()){
+          outtext[0] = 1;
+          lcd.write(1);
+    }
+    else {
+      outtext[0] = 2;
+      lcd.write(2);
+    }
 
-    outtext[0] = entry_type ? (entry_type + 1) : lcd.write(0);
-
-    for (int i = 1; i < 16; ++i){
-        int p = i + scroll_pos - 1;
+    for (byte i = 1; i < 16; ++i){
+        int8_t p = i + scroll_pos - 1;
         if (p < strlen(text)){
             outtext[i] = text[p];
         }
@@ -81,13 +91,17 @@ void scrollText(char* text){
     lcd.print(outtext);
     lcd.setCursor(0, 1);
     lcd.print(F("                    "));
+    
 }
 
 unsigned int readButton(unsigned int pin) {     // Taste einlesen
-  if(analogRead(pin) < 500) { // Analog Eingang abfragen
+  if(analogRead(pin) < 150) { // Analog Eingang abfragen
     delay(150);            
-    if(analogRead(pin) < 500)
+    if(analogRead(pin) < 150){
+      //Serial.println(analogRead(pin));
+      //Serial.println(pin);
       return 1;               // war gedrückt
+    }
   }
   return 0;                   // war nicht gedrückt
 }
@@ -108,7 +122,7 @@ void setupDisplay(){
     lcd.init();
     lcd.backlight();
   
-    lcd.createChar(0, ifile);
+    lcd.createChar(2, ifile);
     lcd.createChar(1, ifolder);
   
     lcd.clear();
@@ -162,11 +176,8 @@ void fetchEntry(int16_t new_index){
     }
 
     do{
-        //sd.chdir(dir_index[dir_depth]);
-        //sd.vwd()->rewind();
         dir[dir_depth].rewind();
         index = 0;
-
         while (index <= new_index){
             found = entry.openNext(&dir[dir_depth], O_READ);
             if (found){
@@ -218,41 +229,30 @@ void enterDir(){
         if (dir_depth < 0){
             if (dir[0].openRoot(&sd)){
                 ++dir_depth;
-                fetchEntry(0);
-
-                Serial.print("EnterDir Root:");
-                Serial.println( "/");
                 sd.chdir( &sd );
-                sd.vwd()->rewind();
             }
         }
         else if (entry.isOpen()){
             ++dir_depth;
             dir[dir_depth] = entry;
             dir_index[dir_depth] = entry_index;
-            fetchEntry(0);
         }
-    }  
+        fetchEntry(0);
+    }
 }
 
 /// This function leaves a subdirectory.
 void leaveDir(){
     // leave only subdirectory
     if (dir_depth > 0){
-        
         dir[dir_depth].close();
         entry_index = dir_index[dir_depth];
         --dir_depth;
         fetchEntry(entry_index);
-
-        Serial.print("LeaveDir:");
-        Serial.println(dir_index[dir_depth]);
         sd.chdir( dir_index[dir_depth] );
         sd.vwd()->rewind();
         
-    } else {    
-      Serial.print("Leave Root:");
-      Serial.println( "/");
+    } else {
       sd.chdir( &sd );
       sd.vwd()->rewind();
     }
@@ -295,16 +295,10 @@ void playTAP(){
 void selectPressed(){
     switch (entry_type){
       case 0:
-          Serial.print("Dir:");
-          Serial.println(lfn);
-          
           sd.chdir( lfn );
-          //sd.vwd()->rewind();
-          enterDir();
-          
+          enterDir();       
           break;
       case 1:
-        //if(entry_type==1){playWAV();}
         playWAV();
         break;
       case 2:
@@ -315,6 +309,46 @@ void selectPressed(){
     }
 }
 
+void recording(){
+  loading=false;
+  tmrpcm.stopPlayback();
+  
+  if(record==false){
+     record=true;
+     tmrpcm.startRecording("record.wav",16000,A5);
+     lcd.clear();
+     lcd.setCursor(0,0);
+     lcd.print(F("record.wav"));
+     lcd.setCursor(0,1);
+     lcd.print(F("Record"));
+     digitalWrite(3, HIGH);//loading LED ON
+  } else {
+    record=false;
+    tmrpcm.stopRecording("record.wav");
+    tmrpcm.disable();
+    lcd.clear();
+    lcd.setCursor(0,0);
+    lcd.print(F("record.wav"));
+    lcd.setCursor(0,1);
+    lcd.print(F("Stop"));
+    digitalWrite(3, LOW);//loading LED OFF
+  }
+}
+
+
+void writeToSD(String line) {
+   File dataFile = sd.open("print.txt", FILE_WRITE);
+   if (dataFile) {
+     dataFile.println(line); // Auf die SD-Karte schreiben
+     dataFile.close();
+     Serial.println(line); // Zusätzlich auf serielle Schnittstelle schreiben zum Debuggen
+   }
+   else {
+     Serial.println("Error opening datafile");
+   }
+}
+
+
 void setup(){
     Serial.begin(9600);
   
@@ -323,20 +357,24 @@ void setup(){
     pinMode(2, OUTPUT);         // LED 1 Device Ready
     pinMode(3, OUTPUT);         // LED 2 Device Loading
 
-    pinMode(A0,INPUT);          // Taste 0 
+    pinMode(A0,INPUT);          // Taste 0 (up)
     digitalWrite(A0,HIGH);      // interner pullup Widerstand
-    pinMode(A1,INPUT);          // Taste 1
-    digitalWrite(A1,HIGH); 
-    pinMode(A2,INPUT);          // Taste 2
-    digitalWrite(A2,HIGH); 
-    pinMode(A3,INPUT);          // Taste 3
-    digitalWrite(A3,HIGH);
-
+    pinMode(A1,INPUT);          // Taste 1 (down)
+    digitalWrite(A1,HIGH);      // interner pullup Widerstand
+    pinMode(A2,INPUT);          // Taste 2 (select)
+    digitalWrite(A2,HIGH);      // interner pullup Widerstand
+    pinMode(A3,INPUT);          // Taste 3 (dir back)
+    digitalWrite(A3,HIGH);      // interner pullup Widerstand
+    pinMode(A4,INPUT);          // Taste 4 (record)
+    digitalWrite(A4,HIGH);      // interner pullup Widerstand
+    pinMode(A5, INPUT);         // Microphone
+    digitalWrite(A5,HIGH); 
+    
     tmrpcm.setVolume(2);
     tmrpcm.speakerPin = 11;
     
-    pinMode(SD0_SS, OUTPUT);
-    sd_ready = sd.begin(SD0_SS, SPI_FULL_SPEED);
+    pinMode(CSPin, OUTPUT);
+    sd_ready = sd.begin(CSPin, SPI_FULL_SPEED);
 
     if (!sd_ready){
         sd.initErrorHalt();
@@ -348,46 +386,59 @@ void setup(){
     }
 }
 
-bool loading = false;
-
 void loop(){
     while (!Serial.available()){
 
-      if(tmrpcm.isPlaying()) {      
-          //LED loading
-          digitalWrite(3, HIGH);
+      if(tmrpcm.isPlaying()&&!record) {      
+          digitalWrite(3, HIGH);//loading LED ON
           loading=true;  
       }else{
           if(loading){   
             lcd.setCursor(0,1);
             lcd.print(F("               "));
             digitalWrite(3, LOW);
-            loading=false;
+            loading=false;//loading LED OFF
           }
         }
-        
+     
         if(readButton(0)) {
-          if(!tmrpcm.isPlaying()) {  
+          if(!tmrpcm.isPlaying()&&!record) {  
             fetchEntry(entry_index - 1);
           }                      
         }
     
         if(readButton(1)) {  
-          if(!tmrpcm.isPlaying()) {                         
+          if(!tmrpcm.isPlaying()&&!record) {                         
             fetchEntry(entry_index + 1);
           }                         
         }
         
         if(readButton(2)) {  
-            selectPressed();    
+            if(!record) { 
+              selectPressed();
+            }   
         }
          
         if(readButton(3)) {
-          if(!tmrpcm.isPlaying()) {   
+          if(!tmrpcm.isPlaying()&&!record) {   
             leaveDir();
+          }
+        }
+
+        if(readButton(4)) {
+          if(!tmrpcm.isPlaying()) { 
+            recording();
           }
         }
      
         displayScrollingMessage();
     }
+
+    if (Serial.available()) {
+      String s = Serial.readString();
+      String line = s + String("\n");
+      writeToSD(line);
+    }
+
+    
 }
